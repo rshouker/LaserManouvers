@@ -82,11 +82,11 @@ extern void addPostEndPoint(Points &points);
 class SplineManouverFromPoints : public SplineManouver
 {
 protected:
-  const Points &_points;
+  std::unique_ptr<Points> _pPoints;
   Points::const_iterator _currentPoint;
 
 public:
-  SplineManouverFromPoints(Points &points);
+  SplineManouverFromPoints(std::unique_ptr<Points> pPoints);
   void reset() override;
   QuadPoint getNextQuadPoint() override;
   bool isFinished() override;
@@ -104,10 +104,10 @@ public:
 class RepeatRawManouver : public RawManouver
 {
 protected:
-  RawManouver &_manouver;
+  std::unique_ptr<RawManouver> _pManouver;
 
 public:
-  RepeatRawManouver(RawManouver &manouver) : _manouver(manouver) {}
+  RepeatRawManouver(std::unique_ptr<RawManouver> pManouver);
   bool isFinished() override;
   Point getNextPoint() override;
   void reset() override;
@@ -119,7 +119,7 @@ protected:
   bool isFinished() override;
   Point getNextPoint() override;
   Point transformPoint(Point p);
-  RawManouver &_manouver;
+  std::unique_ptr<RawManouver> _pManouver;
   float _scale;
   float _rotate;
   Point _translate;
@@ -127,19 +127,26 @@ protected:
   bool _flipV;
 
 public:
-  TransformRawManouver(RawManouver &manouver, float scale, float rotate, Point translate = Point(0, 0), bool flipH = false, bool flipV = false);
+  TransformRawManouver(
+    std::unique_ptr<RawManouver> pManouver,
+    float scale,
+    float rotate,
+    Point translate = Point(0, 0),
+    bool flipH = false,
+    bool flipV = false
+  );
 };
 
-typedef std::vector<RawManouver *> Manouvers;
+typedef std::vector<std::unique_ptr<RawManouver> > Manouvers;
 
 class RawManouverSequence : public RawManouver
 {
 protected:
-  Manouvers _manouvers;
+  std::unique_ptr<Manouvers> _pManouvers;
   Manouvers::iterator _currentManouver;
 
 public:
-  RawManouverSequence(Manouvers manouvers) : _manouvers(manouvers), _currentManouver(manouvers.begin()) {}
+  RawManouverSequence(std::unique_ptr<Manouvers> pManouvers);
   bool isFinished() override;
   Point getNextPoint() override;
   void reset() override;
@@ -148,11 +155,11 @@ public:
 class PointwiseAddRawManouver : public RawManouver
 {
 protected:
-  Manouvers &_manouvers;
+  std::unique_ptr<Manouvers> _pManouvers;
   std::vector<Manouvers::iterator> _iterators;
 
 public:
-  PointwiseAddRawManouver(Manouvers &manouvers);
+  PointwiseAddRawManouver(std::unique_ptr<Manouvers> pManouvers);
   bool isFinished() override;
   Point getNextPoint() override;
   void reset() override;
@@ -161,7 +168,7 @@ public:
 class RawManouverFromSplineManouver : public RawManouver
 {
 protected:
-  SplineManouver &_splineManouver;
+  std::unique_ptr<SplineManouver> _pSplineManouver;
   bool _SplineInputFinished = false;
   float _t = 0;
   QuadPoint _lastQuad;
@@ -173,7 +180,10 @@ protected:
 
 public:
   void reset() override;
-  RawManouverFromSplineManouver(SplineManouver &splineManouver, float rate);
+  RawManouverFromSplineManouver(
+    std::unique_ptr<SplineManouver> pSplineManouver,
+    float rate
+  );
   bool isFinished() override;
   Point getNextPoint() override;
 };

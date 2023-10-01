@@ -2,6 +2,8 @@
 #include <cassert>
 #include <cmath>
 
+using namespace std;
+
 // Catmull-Rom Spline interpolation between p1 and p2 for previous point p0 and next point p3
 static Point spline(const QuadPoint &quad, float t)
 {
@@ -34,19 +36,20 @@ void addPostEndPoint(Points &points)
   points.push_back(postP);
 }
 
-SplineManouverFromPoints::SplineManouverFromPoints(Points &points) : _points(points)
+SplineManouverFromPoints::SplineManouverFromPoints(unique_ptr<Points> pPoints) :
+  _pPoints(move(pPoints))
 {
-  _currentPoint = _points.begin();
+  _currentPoint = _pPoints->begin();
 }
 
 void SplineManouverFromPoints::reset()
 {
-  _currentPoint = _points.begin();
+  _currentPoint = _pPoints->begin();
 }
 
 bool SplineManouverFromPoints::isFinished()
 {
-  return _currentPoint + 4 == _points.end();
+  return _currentPoint + 4 == _pPoints->end();
 }
 
 QuadPoint SplineManouverFromPoints::getNextQuadPoint()
@@ -56,9 +59,10 @@ QuadPoint SplineManouverFromPoints::getNextQuadPoint()
   return quad;
 }
 
-void RepeatRawManouver::reset()
+RepeatRawManouver::RepeatRawManouver(std::unique_ptr<RawManouver> pManouver)
+  : _pManouver(move(pManouver))
 {
-  _manouver.reset();
+  _pManouver->reset();
 }
 
 bool RepeatRawManouver::isFinished()
@@ -68,14 +72,22 @@ bool RepeatRawManouver::isFinished()
 
 Point RepeatRawManouver::getNextPoint()
 {
-  if (_manouver.isFinished())
+  if (_pManouver->isFinished())
   {
-    _manouver.reset();
+    _pManouver->reset();
   }
-  return _manouver.getNextPoint();
+  return _pManouver->getNextPoint();
 }
+TransformRawManouver::TransformRawManouver(
+    std::unique_ptr<RawManouver> pManouver,
+    float scale,
+    float rotate,
+    Point translate,
+    bool flipH,
+    bool flipV) : _scale(scale), _rotate(rotate), _translate(translate),
+                  _flipH(flipH), _flipV(flipV), _pManouver(move(pManouver))
 
-TransformRawManouver::TransformRawManouver(RawManouver &manouver, float scale, float rotate, Point translate, bool flipH, bool flipV) : _manouver(manouver), _scale(scale), _rotate(rotate), _translate(translate), _flipH(flipH), _flipV(flipV) {}
+{}
 
 Point TransformRawManouver::transformPoint(Point p)
 {
@@ -94,25 +106,35 @@ Point TransformRawManouver::transformPoint(Point p)
   return Point(x1 + _translate.x, y1 + _translate.y);
 }
 
+RawManouverSequence::RawManouverSequence(std::unique_ptr<Manouvers> pManouvers)
+ : _pManouvers(move(pManouvers))
+{
+  _currentManouver = pManouvers->begin();
+}
+
 bool TransformRawManouver::isFinished()
 {
-  return _manouver.isFinished();
+  return _pManouver->isFinished();
 }
 
 Point TransformRawManouver::getNextPoint()
 {
-  Point point = _manouver.getNextPoint();
+  Point point = _pManouver->getNextPoint();
   return transformPoint(point);
 }
 
+RawManouverSequence::RawManouverSequence(unique_ptr<Manouvers> pManouvers)
+  : _pManouvers(move(pManouvers)), _currentManouver(pManouvers->begin())
+{}
+
 bool RawManouverSequence::isFinished()
 {
-  return _currentManouver == _manouvers.end();
+  return _currentManouver == _pManouvers->end();
 }
 
 Point RawManouverSequence::getNextPoint()
 {
-  if (_currentManouver == _manouvers.end())
+  if (_currentManouver == _pManouvers->end())
   {
     return Point();
   }
@@ -126,18 +148,19 @@ Point RawManouverSequence::getNextPoint()
 
 void RawManouverSequence::reset()
 {
-  _currentManouver = _manouvers.begin();
-  for (Manouvers::iterator it = _manouvers.begin(); it != _manouvers.end(); it++)
+  _currentManouver = _pManouvers->begin();
+  for (Manouvers::iterator it = _pManouvers->begin(); it != _pManouvers->end(); it++)
   {
     (*it)->reset();
   }
 }
 
-PointwiseAddRawManouver::PointwiseAddRawManouver(Manouvers &manouvers) : _manouvers(manouvers) {};
+PointwiseAddRawManouver::PointwiseAddRawManouver(unique_ptr<Manouvers> pManouvers)
+ : _pManouvers(move(pManouvers)) {};
 
 bool PointwiseAddRawManouver::isFinished()
 {
-  for (Manouvers::iterator it = _manouvers.begin(); it != _manouvers.end(); it++)
+  for (Manouvers::iterator it = _pManouvers->begin(); it != _pManouvers->end(); it++)
   {
     if ((*it)->isFinished())
     {
@@ -149,7 +172,7 @@ bool PointwiseAddRawManouver::isFinished()
 Point PointwiseAddRawManouver::getNextPoint()
 {
   Point sum = Point(0, 0);
-  for (Manouvers::iterator it = _manouvers.begin(); it != _manouvers.end(); it++)
+  for (Manouvers::iterator it = _pManouvers->begin(); it != _pManouvers->end(); it++)
   {
     sum += (*it)->getNextPoint();
   }
@@ -158,7 +181,7 @@ Point PointwiseAddRawManouver::getNextPoint()
 
 void PointwiseAddRawManouver::reset()
 {
-  for (Manouvers::iterator it = _manouvers.begin(); it != _manouvers.end(); it++)
+  for (Manouvers::iterator it = _pManouvers->begin(); it != _pManouvers->end(); it++)
   {
     (*it)->reset();
   }
@@ -172,13 +195,13 @@ void RawManouverFromSplineManouver::advanceT()
   _t += _rate;
   if (floor(_t + epsilon) != floor(oldT + epsilon))
   {
-    if (_splineManouver.isFinished())
+    if (_pSplineManouver->isFinished())
     {
       _SplineInputFinished = true;
     }
     else
     {
-      _lastQuad = _splineManouver.getNextQuadPoint();
+      _lastQuad = _pSplineManouver->getNextQuadPoint();
     }
   }
   _fractionPartOfT = _t - floor(_t + epsilon);
@@ -188,17 +211,18 @@ void RawManouverFromSplineManouver::partialReset()
 {
   _SplineInputFinished = false;
   _t = 0;
-  _lastQuad = _splineManouver.getNextQuadPoint();
+  _lastQuad = _pSplineManouver->getNextQuadPoint();
   _fractionPartOfT = 0;
 }
 
 void RawManouverFromSplineManouver::reset()
 {
-  _splineManouver.reset();
+  _pSplineManouver->reset();
   partialReset();
 }
 
-RawManouverFromSplineManouver::RawManouverFromSplineManouver(SplineManouver &splineManouver, float rate) : _splineManouver(splineManouver), _rate(rate)
+RawManouverFromSplineManouver::RawManouverFromSplineManouver(unique_ptr<SplineManouver> pSplineManouver, float rate) :
+  _pSplineManouver(move(pSplineManouver)), _rate(rate)
 {
   partialReset();
 }
